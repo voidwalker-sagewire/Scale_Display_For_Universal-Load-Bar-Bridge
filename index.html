@@ -5,21 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Universal Grain-Tracer</title>
     <style>
-        :root { --bg: #1a1a1a; --card: #2d2d2d; --text: #f0f0f0; --accent: #4caf50; --alert: #f44336; }
+        :root { --bg: #1a1a1a; --card: #2d2d2d; --text: #f0f0f0; --accent: #4caf50; --alert: #f44336; --warning: #ff9800; }
         body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; text-align: center; }
         .card { background: var(--card); padding: 20px; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
         h1 { font-size: 1.2rem; text-transform: uppercase; letter-spacing: 1px; color: #888; }
-        #total-display { font-size: 4rem; font-weight: bold; margin: 10px 0; color: var(--accent); }
-        .low-stock { color: var(--alert) !important; animation: blink 1s infinite; }
-        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-        button { padding: 20px; font-size: 1.1rem; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; }
+        
+        #total-display { font-size: 4rem; font-weight: bold; margin: 10px 0; color: var(--accent); transition: 0.3s; }
+        .low-stock { color: var(--alert) !important; animation: blink 1.5s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+        
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+        button { padding: 15px; font-size: 1rem; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        
         .btn-in { background: #333; color: white; border: 2px solid var(--accent); }
-        .btn-out { background: var(--accent); color: white; }
-        .btn-export { background: #555; color: white; width: 100%; margin-top: 10px; padding: 10px; font-size: 1rem; }
-        .manual { text-align: left; font-size: 0.9rem; line-height: 1.4; color: #aaa; }
+        .btn-manual-out { background: #333; color: white; border: 2px solid var(--warning); }
+        .btn-out { background: #555; color: white; width: 100%; padding: 20px; font-size: 1.2rem; margin-bottom: 10px; }
+        
+        /* The Glowing Listening Indicator */
+        .listening { background: var(--accent); box-shadow: 0 0 20px rgba(76, 175, 80, 0.6); }
+        
+        .btn-action { background: #444; color: white; width: 100%; margin-top: 10px; }
+        .btn-danger { background: #8b0000; color: white; margin-top: 20px; }
+        
+        /* The Alert Button */
+        #alert-btn { background: var(--alert); color: white; width: 100%; font-size: 1.2rem; padding: 15px; display: none; animation: blink 2s infinite; }
+        #alert-btn.visible { display: block; }
+
         #log-container { text-align: left; margin-top: 20px; }
-        #log { font-size: 0.85rem; height: 150px; overflow-y: auto; background: #111; padding: 10px; border-radius: 5px; font-family: monospace; color: #0f0; }
+        #log { font-size: 0.85rem; height: 150px; overflow-y: auto; background: #111; padding: 10px; border-radius: 5px; font-family: monospace; color: #0f0; margin-bottom: 10px; }
         input { background: transparent; border: none; color: transparent; position: absolute; left: -9999px; }
     </style>
 </head>
@@ -29,105 +42,135 @@
         <h1>Current Grain Inventory</h1>
         <div id="total-display">0.0</div>
         <p>LBS REMAINING</p>
+        <button id="alert-btn" onclick="sendAlert()">🚨 NOTIFY SUPPLIER (LOW STOCK)</button>
     </div>
 
+    <button id="ready-btn" class="btn-out" onclick="readyScale()">🔗 CONNECTING SCALE...</button>
+
     <div class="controls">
-        <button class="btn-in" onclick="manualDelivery()">ADD DELIVERY</button>
-        <button class="btn-out" onclick="readyScale()">READY SCALE</button>
+        <button class="btn-in" onclick="manualDelivery()">+ BULK ADD</button>
+        <button class="btn-manual-out" onclick="manualFeedOut()">- MANUAL OUT</button>
     </div>
 
     <input type="number" id="scale-input" step="0.1" autocomplete="off">
 
-    <div class="card" style="margin-top: 20px;">
-        <h3>Instructions / Calibration</h3>
-        <div class="manual">
-            <p><strong>1. Delivery:</strong> Tap "ADD DELIVERY" to manually type in a bulk feed drop-off.</p>
-            <p><strong>2. Zero Scale:</strong> Clear bars and tap the RED button on the Scale Box.</p>
-            <p><strong>3. Use:</strong> Ensure "READY SCALE" is clicked. Toss a bag on the bars; the scale automatically subtracts it from inventory.</p>
-        </div>
-    </div>
-
     <div id="log-container">
         <h3>Transaction History</h3>
         <div id="log"></div>
-        <button class="btn-export" onclick="exportHistory()">📥 EXPORT LOG TO CSV</button>
-        <button class="btn-export" style="background: #8b0000; margin-top: 10px;" onclick="resetLedger()">⚠️ WIPE LEDGER & RESET TO ZERO</button>
+        <div class="controls">
+            <button class="btn-action" onclick="undoLast()">⏪ UNDO LAST</button>
+            <button class="btn-action" onclick="exportHistory()">📥 EXPORT CSV</button>
+        </div>
+        <button class="btn-action btn-danger" onclick="resetLedger()">⚠️ WIPE LEDGER TO ZERO</button>
     </div>
 
     <script>
         let inventory = 0;
-        let transactions = []; // Array to hold permanent history
-        const threshold = 500; // Low stock alert level
+        let transactions = [];
+        const threshold = 500; // ALERT TRIGGER LEVEL (Adjust as needed)
 
         const display = document.getElementById('total-display');
         const scaleInput = document.getElementById('scale-input');
+        const readyBtn = document.getElementById('ready-btn');
+        const alertBtn = document.getElementById('alert-btn');
         const logDiv = document.getElementById('log');
 
-        // Load data from LocalStorage on Boot
         window.onload = () => {
             const savedInventory = localStorage.getItem('grain_total');
-            if (savedInventory) {
-                inventory = parseFloat(savedInventory);
-                updateDisplay();
-            }
+            if (savedInventory) inventory = parseFloat(savedInventory);
             
             const savedLogs = localStorage.getItem('grain_logs');
-            if (savedLogs) {
-                transactions = JSON.parse(savedLogs);
-                renderLogs();
-            }
+            if (savedLogs) transactions = JSON.parse(savedLogs);
+            
+            updateDisplay();
+            renderLogs();
             readyScale();
         };
 
-        function readyScale() {
-            scaleInput.focus();
-        }
+        // --- GLOWING "READY" INDICATOR ---
+        scaleInput.addEventListener('focus', () => {
+            readyBtn.classList.add('listening');
+            readyBtn.innerText = "🟢 SCALE READY (TOSS BAG ON)";
+        });
+        scaleInput.addEventListener('blur', () => {
+            readyBtn.classList.remove('listening');
+            readyBtn.innerText = "🔴 SCALE PAUSED (TAP TO WAKE)";
+        });
+
+        function readyScale() { scaleInput.focus(); }
 
         // Keep scale focused if user taps empty space
         document.body.onclick = (e) => {
-            if (e.target.tagName !== 'BUTTON') {
-                readyScale();
-            }
+            if (e.target.tagName !== 'BUTTON' && e.target.id !== 'log') readyScale();
         };
 
-        // --- MANUALLY ADD BULK DELIVERY ---
+        // --- MANUAL BULK ADD ---
         function manualDelivery() {
-            let amount = prompt("Enter total LBS delivered (e.g. 2000):");
-            if (amount !== null && amount.trim() !== "") {
-                let val = parseFloat(amount);
-                if (!isNaN(val) && val > 0) {
-                    inventory += val;
-                    const timestamp = new Date().toLocaleString(); // Date AND Time
-                    addLog(`[${timestamp}] +${val.toFixed(1)} lbs (Manual Delivery)`);
-                    saveData();
-                } else {
-                    alert("Invalid number entered.");
-                }
-            }
-            readyScale();
+            let amount = prompt("Enter total LBS delivered:");
+            processTransaction(amount, true, "Manual Delivery");
         }
 
-        // --- AUTOMATICALLY SUBTRACT FROM SCALE ---
+        // --- MANUAL FEED OUT (BUSTED BAGS) ---
+        function manualFeedOut() {
+            let amount = prompt("Enter total LBS removed:");
+            processTransaction(amount, false, "Manual Feed Out");
+        }
+
+        // --- BLUETOOTH SCALE INPUT ---
         scaleInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
-                const val = parseFloat(scaleInput.value);
-                if (!isNaN(val) && val > 0) {
-                    inventory -= val;
-                    const timestamp = new Date().toLocaleString(); // Date AND Time
-                    addLog(`[${timestamp}] -${val.toFixed(1)} lbs (Scale Usage)`);
-                    saveData();
-                    
-                    // Audio Feedback
-                    const msg = new SpeechSynthesisUtterance(`${val} pounds removed`);
-                    window.speechSynthesis.speak(msg);
-                }
+                processTransaction(scaleInput.value, false, "Scale Usage");
                 scaleInput.value = '';
             }
         });
 
-        function addLog(text) {
-            transactions.unshift(text); // Add newest to the top of the array
-            localStorage.setItem('grain_logs', JSON.stringify(transactions)); // Save to memory
+        // --- CORE MATH & LOGGING ---
+        function processTransaction(amount, isAddition, type) {
+            let val = parseFloat(amount);
+            if (!isNaN(val) && val > 0) {
+                if (isAddition) {
+                    inventory += val;
+                } else {
+                    inventory -= val;
+                }
+                const sign = isAddition ? "+" : "-";
+                const timestamp = new Date().toLocaleString();
+                
+                // Save raw value for easy Undo parsing
+                const logEntry = `[${timestamp}] ${sign}${val.toFixed(1)} lbs (${type})`;
+                transactions.unshift(logEntry);
+                saveData();
+                
+                // Voice confirmation for Scale only
+                if(type === "Scale Usage") {
+                    window.speechSynthesis.speak(new SpeechSynthesisUtterance(`${val} pounds removed`));
+                }
+            }
+            readyScale();
+        }
+
+        // --- UNDO LAST TRANSACTION ---
+        function undoLast() {
+            if (transactions.length === 0) return alert("Nothing to undo!");
+            
+            // Get the last string and find the +/- number
+            let lastLog = transactions[0];
+            let match = lastLog.match(/([+-]\d+\.\d+)/); 
+            
+            if (match && confirm(`Undo this transaction?\n\n${lastLog}`)) {
+                let val = parseFloat(match[1]);
+                // Reverse it: If it was negative (feed out), add it back.
+                inventory -= val; 
+                transactions.shift(); // Remove from array
+                saveData();
+            }
+            readyScale();
+        }
+
+        function saveData() {
+            localStorage.setItem('grain_total', inventory);
+            localStorage.setItem('grain_logs', JSON.stringify(transactions));
+            updateDisplay();
             renderLogs();
         }
 
@@ -135,50 +178,51 @@
             logDiv.innerHTML = transactions.map(t => `<div>${t}</div>`).join('');
         }
 
-        function saveData() {
-            localStorage.setItem('grain_total', inventory);
-            updateDisplay();
-        }
-
         function updateDisplay() {
             display.innerText = inventory.toFixed(1);
             if (inventory < threshold) {
                 display.classList.add('low-stock');
+                alertBtn.classList.add('visible'); // Show Alert Button
             } else {
                 display.classList.remove('low-stock');
+                alertBtn.classList.remove('visible'); // Hide Alert Button
+            }
+        }
+
+        // --- TEXT / EMAIL ALERT ---
+        function sendAlert() {
+            const message = `Ranch Alert: Grain inventory is low. We are currently down to ${inventory.toFixed(1)} lbs.`;
+            
+            if (navigator.share) {
+                // Opens native phone share (Text, Email, WhatsApp)
+                navigator.share({
+                    title: 'Low Grain Alert',
+                    text: message
+                }).catch(err => console.log('Share cancelled', err));
+            } else {
+                // Fallback for older browsers: Opens default email app
+                window.location.href = `mailto:?subject=Low Grain Alert&body=${encodeURIComponent(message)}`;
             }
         }
 
         // --- EXPORT TO CSV ---
         function exportHistory() {
-            if (transactions.length === 0) {
-                alert("No history to export.");
-                return;
-            }
-            // Add a header row for the CSV
-            let csvContent = "Timestamp, Transaction Details\n";
-            csvContent += transactions.join("\n");
-            
+            if (transactions.length === 0) return alert("No history to export.");
+            let csvContent = "Timestamp, Transaction Details\n" + transactions.join("\n");
             const blob = new Blob([csvContent], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
-            
             const a = document.createElement('a');
-            a.setAttribute('href', url);
-            a.setAttribute('download', `Grain_Ledger_${new Date().toISOString().split('T')[0]}.csv`);
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+            a.href = url;
+            a.download = `Grain_Ledger_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
         }
-            function resetLedger() {
-            if (confirm("Are you sure you want to completely wipe the ledger and reset inventory to zero? This cannot be undone.")) {
-            inventory = 0;
-            transactions = [];
-            localStorage.removeItem('grain_total');
-            localStorage.removeItem('grain_logs');
-            updateDisplay();
-            renderLogs();
-    }
-}
+
+        // --- WIPE LEDGER ---
+        function resetLedger() {
+            if (confirm("⚠️ Are you sure you want to completely wipe the ledger and reset inventory to zero?")) {
+                inventory = 0; transactions = []; saveData();
+            }
+        }
     </script>
 </body>
 </html>
