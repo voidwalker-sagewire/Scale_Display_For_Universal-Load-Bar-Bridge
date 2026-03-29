@@ -14,8 +14,8 @@
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
         .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
         button { padding: 20px; font-size: 1.1rem; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; }
-        .btn-in { background: var(--accent); color: white; }
-        .btn-out { background: #333; color: white; border: 2px solid var(--accent); }
+        .btn-in { background: #333; color: white; border: 2px solid var(--accent); }
+        .btn-out { background: var(--accent); color: white; }
         .manual { text-align: left; font-size: 0.9rem; line-height: 1.4; color: #aaa; }
         #log { margin-top: 20px; font-size: 0.8rem; height: 150px; overflow-y: auto; background: #111; padding: 10px; border-radius: 5px; }
         input { background: transparent; border: none; color: transparent; position: absolute; left: -9999px; }
@@ -30,8 +30,8 @@
     </div>
 
     <div class="controls">
-        <button class="btn-in" onclick="setMode('IN')">ADD DELIVERY</button>
-        <button class="btn-out" onclick="setMode('OUT')">FEED OUT</button>
+        <button class="btn-in" onclick="manualDelivery()">ADD DELIVERY</button>
+        <button class="btn-out" onclick="readyScale()">READY SCALE</button>
     </div>
 
     <input type="number" id="scale-input" step="0.1" autocomplete="off">
@@ -39,9 +39,9 @@
     <div class="card" style="margin-top: 20px;">
         <h3>Instructions / Calibration</h3>
         <div class="manual">
-            <p><strong>1. Zero:</strong> Clear bars and tap "Tare" on the Scale Box.</p>
-            <p><strong>2. Calibrate:</strong> Place 45lb dumbbell. If weight is wrong, hold Calibrate button on box.</p>
-            <p><strong>3. Use:</strong> Select "Feed Out" and toss a bag on. Scale types it automatically!</p>
+            <p><strong>1. Delivery:</strong> Tap "ADD DELIVERY" to manually type in a bulk feed drop-off.</p>
+            <p><strong>2. Zero Scale:</strong> Clear bars and tap the RED button on the Scale Box.</p>
+            <p><strong>3. Use:</strong> Ensure "READY SCALE" is clicked. Toss a bag on the bars; the scale automatically subtracts it from inventory.</p>
         </div>
     </div>
 
@@ -49,7 +49,6 @@
 
     <script>
         let inventory = 0;
-        let mode = 'OUT'; // Default mode
         const threshold = 500; // Low stock alert level
 
         const display = document.getElementById('total-display');
@@ -63,44 +62,59 @@
                 inventory = parseFloat(saved);
                 updateDisplay();
             }
-            // Keep hidden input focused for Bluetooth Keyboard
-            document.body.onclick = () => scaleInput.focus();
-            scaleInput.focus();
+            readyScale();
         };
 
-        function setMode(m) {
-            mode = m;
+        // Focus the hidden input so the scale can "type"
+        function readyScale() {
             scaleInput.focus();
-            alert(`Mode set to: ${mode}. Place bag on scale.`);
         }
 
-        // Handle the data typed by the Bluetooth Scale Bridge
+        // Click anywhere to keep the scale focused
+        document.body.onclick = (e) => {
+            if (e.target.tagName !== 'BUTTON') {
+                readyScale();
+            }
+        };
+
+        // --- MANUALLY ADD BULK DELIVERY ---
+        function manualDelivery() {
+            let amount = prompt("Enter total LBS delivered (e.g. 2000):");
+            if (amount !== null && amount.trim() !== "") {
+                let val = parseFloat(amount);
+                if (!isNaN(val) && val > 0) {
+                    inventory += val;
+                    const date = new Date().toLocaleTimeString();
+                    addLog(`[${date}] +${val} lbs (Manual Delivery)`);
+                    saveData();
+                } else {
+                    alert("Invalid number entered.");
+                }
+            }
+            readyScale(); // Set focus back to scale after closing prompt
+        }
+
+        // --- AUTOMATICALLY SUBTRACT FROM SCALE ---
         scaleInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 const val = parseFloat(scaleInput.value);
-                if (!isNaN(val)) {
-                    processTransaction(val);
+                if (!isNaN(val) && val > 0) {
+                    inventory -= val;
+                    const date = new Date().toLocaleTimeString();
+                    addLog(`[${date}] -${val} lbs (Scale Usage)`);
+                    saveData();
+                    
+                    // Audio Feedback
+                    const msg = new SpeechSynthesisUtterance(`${val} pounds removed`);
+                    window.speechSynthesis.speak(msg);
                 }
                 scaleInput.value = '';
             }
         });
 
-        function processTransaction(val) {
-            const date = new Date().toLocaleTimeString();
-            if (mode === 'IN') {
-                inventory += val;
-                addLog(`[${date}] +${val} lbs (Delivery)`);
-            } else {
-                inventory -= val;
-                addLog(`[${date}] -${val} lbs (Usage)`);
-            }
-            
+        function saveData() {
             localStorage.setItem('grain_total', inventory);
             updateDisplay();
-            
-            // Audio Feedback
-            const msg = new SpeechSynthesisUtterance(`${val} pounds recorded`);
-            window.speechSynthesis.speak(msg);
         }
 
         function updateDisplay() {
