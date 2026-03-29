@@ -3,104 +3,123 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Yoke - HerdMate AI</title>
+    <title>HerdMate AI - The Yoke</title>
     <style>
-        :root { --bg: #1a1a1a; --card: #2d2d2d; --text: #f0f0f0; --accent: #4caf50; --warning: #ff9800; --alert: #f44336; }
-        body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; text-align: center; }
-        .card { background: var(--card); padding: 20px; border-radius: 15px; margin-bottom: 20px; border: 1px solid #444; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-        .brand { color: #888; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 5px; }
-        h1 { font-size: 4rem; margin: 10px 0; color: var(--accent); }
-        .prediction { color: var(--warning); font-size: 1.2rem; font-weight: bold; margin-bottom: 10px; }
-        .stats { display: flex; justify-content: space-around; font-size: 0.9rem; color: #aaa; margin-top: 15px; border-top: 1px solid #444; padding-top: 15px; }
-        button { background: var(--accent); color: white; border: none; padding: 18px; width: 100%; border-radius: 10px; font-weight: bold; font-size: 1.1rem; cursor: pointer; margin-top: 10px; }
-        .btn-sim { background: #444; margin-top: 20px; font-size: 0.9rem; border: 1px dashed #666; }
-        #log { text-align: left; background: #111; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 0.8rem; color: #0f0; height: 100px; overflow-y: auto; margin-top: 10px; }
+        :root { --bg: #1a1a1a; --card: #2d2d2d; --accent: #4caf50; --warn: #ff9800; --danger: #8b0000; --text: #f0f0f0; }
+        body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 15px; text-align: center; }
+        .card { background: var(--card); padding: 20px; border-radius: 15px; margin-bottom: 15px; border: 1px solid #444; }
+        h1 { font-size: 3.5rem; margin: 10px 0; color: var(--accent); }
+        .predict { color: var(--warn); font-size: 1.2rem; font-weight: bold; margin-bottom: 10px; }
+        .input-group { display: flex; gap: 10px; margin-bottom: 10px; }
+        input { flex: 1; padding: 15px; border-radius: 8px; border: 1px solid #555; background: #111; color: white; font-size: 1.1rem; }
+        button { border: none; padding: 15px; border-radius: 8px; font-weight: bold; cursor: pointer; color: white; }
+        .btn-main { background: var(--accent); width: 100%; font-size: 1.1rem; }
+        .btn-util { background: #444; width: 100%; margin-top: 10px; }
+        .btn-danger { background: var(--danger); width: 100%; margin-top: 20px; }
+        #log { text-align: left; background: #000; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 0.8rem; height: 150px; overflow-y: auto; color: #0f0; margin-top: 10px; border: 1px solid #333; }
+        .undo-link { color: var(--warn); font-size: 0.8rem; cursor: pointer; text-decoration: underline; }
     </style>
 </head>
 <body>
 
-    <div class="brand">HerdMate AI • The Yoke v2.0</div>
+    <div style="font-size: 0.7rem; color: #777; letter-spacing: 2px; margin-bottom: 10px;">HERDMATE AI • THE YOKE</div>
 
     <div class="card">
-        <h3>CURRENT INVENTORY</h3>
-        <h1 id="inv-display">2450.0</h1>
-        <p>LBS REMAINING</p>
-        <div class="prediction" id="days-display">Calculating...</div>
-        
-        <div class="stats">
-            <div>Daily Avg: <span id="avg-display">50.0</span> lbs</div>
-            <div>Usage: <span id="usage-display">Low</span></div>
+        <h3 style="margin:0; font-size: 0.9rem; color: #aaa;">GRAIN INVENTORY</h3>
+        <h1 id="inv-display">0.0</h1>
+        <p style="margin:0 0 10px 0;">LBS REMAINING</p>
+        <div class="predict" id="days-display">Days Remaining: --</div>
+    </div>
+
+    <div class="card">
+        <div class="input-group">
+            <input type="number" id="manual-weight" placeholder="Enter LBS used...">
+            <button style="background:#555; width: 80px;" onclick="logWeight()">LOG</button>
         </div>
+        <button class="btn-main" onclick="addDelivery()">+ ADD BULK DELIVERY</button>
     </div>
 
-    <button onclick="addDelivery()">+ ADD BULK DELIVERY</button>
-    
-    <button class="btn-sim" onclick="simulateScaleDrop()">[SIMULATE 50LB BAG DROP]</button>
-
-    <div style="margin-top: 30px; text-align: left;">
-        <h4>Recent Activity</h4>
+    <div class="card" style="text-align: left;">
+        <div style="display:flex; justify-content:space-between; align-items: center;">
+            <strong style="font-size: 0.9rem;">TRANSACTION HISTORY</strong>
+            <span class="undo-link" onclick="undoLast()">UNDO LAST</span>
+        </div>
         <div id="log"></div>
+        <button class="btn-util" onclick="exportCSV()">📥 EXPORT CSV LEDGER</button>
     </div>
+
+    <button class="btn-danger" onclick="factoryReset()">⚠️ WIPE ALL DATA</button>
 
     <script>
-        // --- APP STATE ---
-        let inventory = 2450.0;
-        let dailyUsage = [50, 48, 52, 45, 55, 49, 51]; // Mock 7-day data
-        
+        let inventory = parseFloat(localStorage.getItem('herd_inv')) || 0;
+        let logs = JSON.parse(localStorage.getItem('herd_logs')) || [];
+
         function updateUI() {
-            // Update Inventory
             document.getElementById('inv-display').innerText = inventory.toFixed(1);
             
-            // Calculate Rolling Average
-            let sum = dailyUsage.reduce((a, b) => a + b, 0);
-            let avg = sum / dailyUsage.length;
-            document.getElementById('avg-display').innerText = avg.toFixed(1);
+            // Prediction Logic: Calculate Daily Average (7-day roll)
+            let feedings = logs.filter(l => l.includes('-')).map(l => {
+                let match = l.match(/-(\d+(\.\d+)?)/);
+                return match ? Math.abs(parseFloat(match[1])) : null;
+            }).filter(n => n !== null);
             
-            // Predict Days Remaining
-            let daysLeft = inventory / avg;
-            document.getElementById('days-display').innerText = `EST. ${daysLeft.toFixed(1)} DAYS REMAINING`;
+            let avg = feedings.length > 0 ? (feedings.slice(0, 7).reduce((a, b) => a + b, 0) / Math.min(feedings.length, 7)) : 50;
+            let days = avg > 0 ? (inventory / avg).toFixed(1) : "??";
+            document.getElementById('days-display').innerText = `EST. ${days} DAYS REMAINING`;
             
-            // Alert Check
-            if (daysLeft < 3) {
-                document.getElementById('days-display').style.color = "#f44336";
-            } else {
-                document.getElementById('days-display').style.color = "#ff9800";
-            }
+            document.getElementById('log').innerHTML = logs.map(l => `<div>${l}</div>`).join('');
+            
+            localStorage.setItem('herd_inv', inventory);
+            localStorage.setItem('herd_logs', JSON.stringify(logs));
         }
 
-        function addLog(msg) {
-            const entry = document.createElement('div');
-            entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            const log = document.getElementById('log');
-            log.prepend(entry);
-        }
-
-        function addDelivery() {
-            let val = prompt("Enter Bulk LBS Delivered:");
-            if (val && !isNaN(val)) {
-                inventory += parseFloat(val);
-                addLog(`+${val} lbs (Delivery)`);
+        function logWeight() {
+            const input = document.getElementById('manual-weight');
+            let val = parseFloat(input.value);
+            if (val > 0) {
+                inventory -= val;
+                logs.unshift(`[${new Date().toLocaleDateString()}] -${val.toFixed(1)} lbs (Feeding)`);
+                input.value = '';
                 updateUI();
             }
         }
 
-        function simulateScaleDrop() {
-            let weight = 50.0; // Simulated bag weight
-            inventory -= weight;
-            
-            // Add to usage stats (simplification for the demo)
-            dailyUsage.shift();
-            dailyUsage.push(weight);
-            
-            addLog(`-${weight} lbs (Scale Usage)`);
-            updateUI();
-            
-            // Demo Audio
-            const msg = new SpeechSynthesisUtterance("50 pounds removed from bin");
-            window.speechSynthesis.speak(msg);
+        function addDelivery() {
+            let val = prompt("LBS Delivered:");
+            if (val && !isNaN(val)) {
+                inventory += parseFloat(val);
+                logs.unshift(`[${new Date().toLocaleDateString()}] +${parseFloat(val).toFixed(1)} lbs (Delivery)`);
+                updateUI();
+            }
         }
 
-        // Initialize
+        function undoLast() {
+            if (logs.length > 0 && confirm("Undo last entry?")) {
+                let last = logs.shift();
+                let match = last.match(/([+-]\d+(\.\d+)?)/);
+                if (match) {
+                    let amt = parseFloat(match[1]);
+                    inventory -= amt; // Reverse the math
+                    updateUI();
+                }
+            }
+        }
+
+        function exportCSV() {
+            let csv = "Date, Transaction\n" + logs.join('\n');
+            let blob = new Blob([csv], {type: 'text/csv'});
+            let a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `HerdMate_Ledger_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+        }
+
+        function factoryReset() {
+            if (confirm("🚨 WARNING: This will wipe all inventory and history. Proceed?")) {
+                inventory = 0; logs = []; updateUI();
+            }
+        }
+
         updateUI();
     </script>
 </body>
