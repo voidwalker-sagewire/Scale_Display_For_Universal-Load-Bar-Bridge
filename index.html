@@ -51,6 +51,7 @@
         <h3>Transaction History</h3>
         <div id="log"></div>
         <button class="btn-export" onclick="exportHistory()">📥 EXPORT LOG TO CSV</button>
+        <button class="btn-export" style="background: #8b0000; margin-top: 10px;" onclick="resetLedger()">⚠️ WIPE LEDGER & RESET TO ZERO</button>
     </div>
 
     <script>
@@ -168,6 +169,16 @@
             a.click();
             document.body.removeChild(a);
         }
+            function resetLedger() {
+            if (confirm("Are you sure you want to completely wipe the ledger and reset inventory to zero? This cannot be undone.")) {
+            inventory = 0;
+            transactions = [];
+            localStorage.removeItem('grain_total');
+            localStorage.removeItem('grain_logs');
+            updateDisplay();
+            renderLogs();
+    }
+}
     </script>
 </body>
 </html>
