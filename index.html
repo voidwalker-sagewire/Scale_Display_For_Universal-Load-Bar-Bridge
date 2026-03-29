@@ -16,8 +16,10 @@
         button { padding: 20px; font-size: 1.1rem; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; }
         .btn-in { background: #333; color: white; border: 2px solid var(--accent); }
         .btn-out { background: var(--accent); color: white; }
+        .btn-export { background: #555; color: white; width: 100%; margin-top: 10px; padding: 10px; font-size: 1rem; }
         .manual { text-align: left; font-size: 0.9rem; line-height: 1.4; color: #aaa; }
-        #log { margin-top: 20px; font-size: 0.8rem; height: 150px; overflow-y: auto; background: #111; padding: 10px; border-radius: 5px; }
+        #log-container { text-align: left; margin-top: 20px; }
+        #log { font-size: 0.85rem; height: 150px; overflow-y: auto; background: #111; padding: 10px; border-radius: 5px; font-family: monospace; color: #0f0; }
         input { background: transparent; border: none; color: transparent; position: absolute; left: -9999px; }
     </style>
 </head>
@@ -45,32 +47,42 @@
         </div>
     </div>
 
-    <div id="log">--- Transaction History ---</div>
+    <div id="log-container">
+        <h3>Transaction History</h3>
+        <div id="log"></div>
+        <button class="btn-export" onclick="exportHistory()">📥 EXPORT LOG TO CSV</button>
+    </div>
 
     <script>
         let inventory = 0;
+        let transactions = []; // Array to hold permanent history
         const threshold = 500; // Low stock alert level
 
         const display = document.getElementById('total-display');
         const scaleInput = document.getElementById('scale-input');
-        const log = document.getElementById('log');
+        const logDiv = document.getElementById('log');
 
-        // Load data from LocalStorage
+        // Load data from LocalStorage on Boot
         window.onload = () => {
-            const saved = localStorage.getItem('grain_total');
-            if (saved) {
-                inventory = parseFloat(saved);
+            const savedInventory = localStorage.getItem('grain_total');
+            if (savedInventory) {
+                inventory = parseFloat(savedInventory);
                 updateDisplay();
+            }
+            
+            const savedLogs = localStorage.getItem('grain_logs');
+            if (savedLogs) {
+                transactions = JSON.parse(savedLogs);
+                renderLogs();
             }
             readyScale();
         };
 
-        // Focus the hidden input so the scale can "type"
         function readyScale() {
             scaleInput.focus();
         }
 
-        // Click anywhere to keep the scale focused
+        // Keep scale focused if user taps empty space
         document.body.onclick = (e) => {
             if (e.target.tagName !== 'BUTTON') {
                 readyScale();
@@ -84,14 +96,14 @@
                 let val = parseFloat(amount);
                 if (!isNaN(val) && val > 0) {
                     inventory += val;
-                    const date = new Date().toLocaleTimeString();
-                    addLog(`[${date}] +${val} lbs (Manual Delivery)`);
+                    const timestamp = new Date().toLocaleString(); // Date AND Time
+                    addLog(`[${timestamp}] +${val.toFixed(1)} lbs (Manual Delivery)`);
                     saveData();
                 } else {
                     alert("Invalid number entered.");
                 }
             }
-            readyScale(); // Set focus back to scale after closing prompt
+            readyScale();
         }
 
         // --- AUTOMATICALLY SUBTRACT FROM SCALE ---
@@ -100,8 +112,8 @@
                 const val = parseFloat(scaleInput.value);
                 if (!isNaN(val) && val > 0) {
                     inventory -= val;
-                    const date = new Date().toLocaleTimeString();
-                    addLog(`[${date}] -${val} lbs (Scale Usage)`);
+                    const timestamp = new Date().toLocaleString(); // Date AND Time
+                    addLog(`[${timestamp}] -${val.toFixed(1)} lbs (Scale Usage)`);
                     saveData();
                     
                     // Audio Feedback
@@ -111,6 +123,16 @@
                 scaleInput.value = '';
             }
         });
+
+        function addLog(text) {
+            transactions.unshift(text); // Add newest to the top of the array
+            localStorage.setItem('grain_logs', JSON.stringify(transactions)); // Save to memory
+            renderLogs();
+        }
+
+        function renderLogs() {
+            logDiv.innerHTML = transactions.map(t => `<div>${t}</div>`).join('');
+        }
 
         function saveData() {
             localStorage.setItem('grain_total', inventory);
@@ -126,10 +148,25 @@
             }
         }
 
-        function addLog(text) {
-            const entry = document.createElement('div');
-            entry.innerText = text;
-            log.prepend(entry);
+        // --- EXPORT TO CSV ---
+        function exportHistory() {
+            if (transactions.length === 0) {
+                alert("No history to export.");
+                return;
+            }
+            // Add a header row for the CSV
+            let csvContent = "Timestamp, Transaction Details\n";
+            csvContent += transactions.join("\n");
+            
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.setAttribute('href', url);
+            a.setAttribute('download', `Grain_Ledger_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
         }
     </script>
 </body>
